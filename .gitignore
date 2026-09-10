@@ -1,0 +1,12 @@
+# Fredrin's per-ticket tooling. The `fredrin` wrapper carries a scoped API
+# credential and the hooks and context pack are regenerated for every worktree,
+# so none of it belongs in the repo. `setup.sh` is the exception: it is the
+# bootstrap script the project commits deliberately (see PR #1).
+#
+# FREDRIN.md is ignored because this repo has never tracked it. If the project
+# later decides to commit it, add `!.fredrin/FREDRIN.md` below.
+.fredrin/*
+!.fredrin/setup.sh
+
+# macOS / editor noise
+.DS_Store
