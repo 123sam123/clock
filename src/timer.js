@@ -1,14 +1,42 @@
 // Countdown timer engine. Pure ES module: no DOM, no scheduling — the caller
 // drives it via tick() so a throttled background tab cannot make it drift.
 
-export function createTimer({ durationMs, now = () => Date.now() } = {}) {
+const STATUSES = ['idle', 'running', 'paused', 'done'];
+
+// status, accumulatedMs and startedAt are accepted so a serialize()d record
+// round-trips: createTimer({ ...timer.serialize(), now }) rebuilds a timer.
+// They are validated here — this is the one place engine state is checked, so
+// callers restoring stored data rely on the RangeError rather than re-checking.
+export function createTimer({
+  durationMs,
+  now = () => Date.now(),
+  status = 'idle',
+  accumulatedMs = 0, // elapsed before the current run segment
+  startedAt = null, // clock reading when the current run segment began
+} = {}) {
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
     throw new RangeError(`durationMs must be a positive number of milliseconds, got ${durationMs}`);
   }
+  if (!STATUSES.includes(status)) {
+    throw new RangeError(`status must be one of ${STATUSES.join(', ')}, got ${status}`);
+  }
+  if (!Number.isFinite(accumulatedMs) || accumulatedMs < 0 || accumulatedMs > durationMs) {
+    throw new RangeError(`accumulatedMs must be between 0 and durationMs, got ${accumulatedMs}`);
+  }
+  if (status === 'idle' && accumulatedMs !== 0) {
+    throw new RangeError(`an idle timer cannot have elapsed time, got ${accumulatedMs}`);
+  }
+  if (status === 'done' && accumulatedMs !== durationMs) {
+    throw new RangeError(`a done timer must have elapsed its full duration, got ${accumulatedMs}`);
+  }
+  if (status === 'running') {
+    if (!Number.isFinite(startedAt)) {
+      throw new RangeError(`a running timer needs a numeric startedAt, got ${startedAt}`);
+    }
+  } else {
+    startedAt = null;
+  }
 
-  let status = 'idle';
-  let accumulatedMs = 0; // elapsed before the current run segment
-  let startedAt = null; // clock reading when the current run segment began
   const listeners = [];
 
   // Math.max clamps a clock that moved backwards (system time change) so the
@@ -44,7 +72,9 @@ export function createTimer({ durationMs, now = () => Date.now() } = {}) {
 
     pause() {
       if (status !== 'running') return;
-      accumulatedMs += Math.max(0, now() - startedAt);
+      // Math.min keeps a pause that lands after expiry but before the next
+      // tick() inside the duration, so the paused state always serializes.
+      accumulatedMs = Math.min(durationMs, accumulatedMs + Math.max(0, now() - startedAt));
       startedAt = null;
       status = 'paused';
       emit();
@@ -68,6 +98,12 @@ export function createTimer({ durationMs, now = () => Date.now() } = {}) {
     },
 
     getState: snapshot,
+
+    // The engine's own state rather than the derived snapshot, in the shape
+    // createTimer accepts, so a persisted timer can be rebuilt exactly.
+    serialize() {
+      return { durationMs, status, accumulatedMs, startedAt };
+    },
 
     subscribe(listener) {
       listeners.push(listener);

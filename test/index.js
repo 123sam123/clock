@@ -5,3 +5,4 @@ import './timer.test.mjs';
 import './chime.test.mjs';
 import './notify.test.mjs';
 import './completion.test.mjs';
+import './session.test.mjs';
