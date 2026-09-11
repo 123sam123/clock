@@ -1,7 +1,9 @@
 // Page wiring: drives the engine with a tick interval and reacts to `done`
-// with the chime and, when the user opted in, a browser notification.
+// with the chime and, when the user opted in, a browser notification. The
+// timer itself is persisted, so a reload resumes the session in progress.
 
-import { createTimer, formatRemaining } from './timer.js';
+import { formatRemaining } from './timer.js';
+import { createPersistedTimer } from './session.js';
 import { unlockAudio, playChime } from './chime.js';
 import { toggleNotify, notifyDone } from './notify.js';
 import { watchCompletion, makeOnDone } from './completion.js';
@@ -14,7 +16,12 @@ const seconds = Number(new URLSearchParams(window.location.search).get('s'));
 const durationMs =
   Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : DEFAULT_MS;
 
-const timer = createTimer({ durationMs });
+// Restored from storage when a session for this duration was in progress,
+// fresh otherwise; reset clears the record. A session that ran out while the
+// page was closed comes back already done, so it is settled here, before
+// watchCompletion below subscribes — that ordering is what keeps the chime
+// and notification from firing for a completion the user was not there for.
+const timer = createPersistedTimer({ durationMs });
 
 const display = document.getElementById('display');
 const startButton = document.getElementById('start');
@@ -54,6 +61,11 @@ startButton.addEventListener('click', () => {
   unlockAudio();
   timer.start();
 });
+// A restored running session never saw that Start click on this page, so
+// take the first gesture of any kind as the unlock instead.
+for (const type of ['pointerdown', 'keydown']) {
+  document.addEventListener(type, () => unlockAudio(), { once: true });
+}
 pauseButton.addEventListener('click', () => timer.pause());
 resetButton.addEventListener('click', () => timer.reset());
 
